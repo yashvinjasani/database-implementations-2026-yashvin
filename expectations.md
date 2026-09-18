@@ -19,4 +19,3 @@
 ‑ I will ask questions when I don’t understand a concept.
 ## Questions I Have Right Now
 ‑ How will I create a database engine for the upcoming project(Event registration and attendee management) to complete throughout the semester?
-- Database security concerns: How to implement security in my project to put the learning into practical exercise?
