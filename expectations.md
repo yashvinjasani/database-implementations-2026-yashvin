@@ -18,5 +18,3 @@
 ‑ I will write short Markdown notes after each class about what I learned.
 ‑ I will ask questions when I don’t understand a concept.
 ## Questions I Have Right Now
-‑ How will I create a database engine for the upcoming project(Event registration and attendee management) to complete throughout the semester?
-- Get feedback on email about my built-up of event registration and attendee management project's features inclusion in this course.
