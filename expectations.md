@@ -17,4 +17,5 @@
 ‑ I will commit and push my work after each lab.
 ‑ I will write short Markdown notes after each class about what I learned.
 ‑ I will ask questions when I don’t understand a concept.
-## Questions I Have Right Now
+## Markdown notes after 10/05 class
+-
