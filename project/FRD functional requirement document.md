@@ -87,7 +87,7 @@ Before writing the requirements, here are the answers to the 9 group questions b
 
 #### **7\. Data Requirements**
 
-*(Based entirely on your provided table schema)*
+*(Based entirely on created table schema)*
 
 | Data subject | Information to store | Example identifier | Likely relationship(s) |
 | :---- | :---- | :---- | :---- |
