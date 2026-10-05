@@ -24,11 +24,11 @@ Before writing the requirements, here are the answers to the 9 group questions b
 | Item | Information |
 | :---- | :---- |
 | **Project title** | Event Registration and Attendee Management System |
-| **Prepared by** | \[Your Name\] |
+| **Prepared by** | Yashvin Jasani |
 | **Course/section** | CS 437 Database Implementation |
 | **Date** | October 5, 2026 |
 | **Version** | 1.0 |
-| **Repository location** | \[Your GitHub URL\] |
+| **Repository location** | \https://github.com/yashvinjasani/database-implementations-2026-yashvin\ |
 
 #### **2\. Business Problem and Purpose**
 
