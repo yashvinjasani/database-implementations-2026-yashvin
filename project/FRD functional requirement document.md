@@ -28,7 +28,7 @@ Before writing the requirements, here are the answers to the 9 group questions b
 | **Course/section** | CS 437 Database Implementation |
 | **Date** | October 5, 2026 |
 | **Version** | 1.0 |
-| **Repository location** | \https://github.com/yashvinjasani/database-implementations-2026-yashvin\ |
+| **Repository location** | https://github.com/yashvinjasani/database-implementations-2026-yashvin |
 
 #### **2\. Business Problem and Purpose**
 
