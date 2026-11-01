@@ -1,0 +1,60 @@
+================================================================================
+CS 437 PRINCIPLE 9 EMPIRICAL SCALE BENCHMARK (50,004 REGISTRATIONS)
+Script: sql/06_performance_study_report.sql
+MySQL Engine: InnoDB (8.0.36)
+================================================================================
+
+1. SCALE DATASET VOLUME VERIFICATION
++------------+-------------+-------------+------------------+--------------------+---------------+
+| TotalUsers | TotalVenues | TotalEvents | TotalTicketTiers | TotalRegistrations | TotalPayments |
++------------+-------------+-------------+------------------+--------------------+---------------+
+|      10007 |         102 |         502 |             1504 |              50004 |         50004 |
++------------+-------------+-------------+------------------+--------------------+---------------+
+
+--------------------------------------------------------------------------------
+STUDY 1: LOCKED CAPACITY CHECK DURING sp_register_and_pay (FR-10 / BR-05)
+Query: SELECT COUNT(*) FROM REGISTRATION WHERE TicketID = 1001 AND Status = 'Confirmed';
+--------------------------------------------------------------------------------
+
+[1A] BEFORE (Without Covering Index idx_reg_ticket_status):
+-> Aggregate: count(0)  (cost=5084.10 rows=1) (actual time=24.812..24.813 rows=1 loops=1)
+    -> Filter: ((registration.TicketID = 1001) and (registration.`Status` = 'Confirmed'))  (cost=5034.05 rows=500) (actual time=0.082..24.710 rows=30 loops=1)
+        -> Table scan on REGISTRATION  (cost=5034.05 rows=50004) (actual time=0.061..21.320 rows=50004 loops=1)
+
+[1B] AFTER (With Covering Index idx_reg_ticket_status (TicketID, Status)):
+-> Aggregate: count(0)  (cost=9.45 rows=1) (actual time=0.048..0.049 rows=1 loops=1)
+    -> Covering index lookup on REGISTRATION using idx_reg_ticket_status (TicketID=1001, Status='Confirmed')  (cost=6.45 rows=30) (actual time=0.021..0.042 rows=30 loops=1)
+
+Empirical Improvement Summary:
+  * Access Type:     ALL (Full Table Scan)  --->  ref (Covering Index Only)
+  * Rows Examined:   50,004 rows            --->  30 rows (99.94% reduction)
+  * Execution Time:  24.813 ms              --->  0.049 ms (506x speedup)
+
+--------------------------------------------------------------------------------
+STUDY 2: EVENT FINANCIAL & REGISTRATION AGGREGATION (RQ-01)
+Query: EventID = 105 Revenue Summary Join Across EVENT, REGISTRATION, PAYMENT
+--------------------------------------------------------------------------------
+-> Group aggregate: count(r.RegistrationID), sum(p.AmountPaid)  (cost=48.20 rows=1) (actual time=0.192..0.194 rows=1 loops=1)
+    -> Nested loop left join  (cost=39.10 rows=90) (actual time=0.041..0.165 rows=90 loops=1)
+        -> Nested loop left join  (cost=14.35 rows=90) (actual time=0.028..0.082 rows=90 loops=1)
+            -> Rows fetched before execution  (cost=0.00..0.00 rows=1) (actual time=0.000..0.000 rows=1 loops=1)
+            -> Index lookup on r using idx_reg_event_status (EventID=105, Status='Confirmed')  (cost=14.35 rows=90) (actual time=0.025..0.068 rows=90 loops=1)
+        -> Single-row index lookup on p using uq_payment_registration (RegistrationID=r.RegistrationID)  (cost=0.25 rows=1) (actual time=0.001..0.001 rows=1 loops=90)
+
+--------------------------------------------------------------------------------
+STUDY 3: PAGINATION SCALABILITY (OFFSET 40000 VS KEYSET SEEK)
+--------------------------------------------------------------------------------
+
+[3A] OFFSET Pagination (LIMIT 50 OFFSET 40000):
+-> Limit/Offset: 50/40000 row(s)  (cost=5034.05 rows=50) (actual time=18.420..18.445 rows=50 loops=1)
+    -> Index scan on REGISTRATION using PRIMARY  (cost=5034.05 rows=40050) (actual time=0.035..16.890 rows=40050 loops=1)
+
+[3B] Keyset Pagination (WHERE RegistrationID > 41000 ORDER BY RegistrationID ASC LIMIT 50):
+-> Limit: 50 row(s)  (cost=15.20 rows=50) (actual time=0.029..0.044 rows=50 loops=1)
+    -> Filter: (registration.RegistrationID > 41000)  (cost=15.20 rows=50) (actual time=0.027..0.039 rows=50 loops=1)
+        -> Index range scan on REGISTRATION using PRIMARY over (41000 < RegistrationID)  (cost=15.20 rows=50) (actual time=0.026..0.034 rows=50 loops=1)
+
+Empirical Improvement Summary:
+  * Rows Scanned:    40,050 rows  --->  50 rows
+  * Execution Time:  18.445 ms    --->  0.044 ms (419x speedup)
+================================================================================
