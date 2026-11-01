@@ -1,0 +1,74 @@
+2026-10-31T22:10:01Z | === CS 437 Automated Database Build: v2.0-release ===
+2026-10-31T22:10:01Z | Repository: yashvin/event-registration-db | Tag: v2.0-release | Commit SHA: 7d3a82f1b409c2a864e29b12cf30a1e0992c6ef1
+2026-10-31T22:10:01Z | Target Database: event_registration on 127.0.0.1:3306
+2026-10-31T22:10:01Z | Verified manifest sql/manifest.txt (8 scripts present).
+2026-10-31T22:10:01Z | ALLOW_DATABASE_RECREATE=YES confirmed. Existing database 'event_registration' will be rebuilt cleanly.
+2026-10-31T22:10:01Z | Executing: sql/01_schema_ddl.sql ...
+2026-10-31T22:10:02Z | SUCCESS: sql/01_schema_ddl.sql (412 ms)
+2026-10-31T22:10:02Z | Executing: sql/02_triggers_and_procedures.sql ...
+2026-10-31T22:10:02Z | SUCCESS: sql/02_triggers_and_procedures.sql (195 ms)
+2026-10-31T22:10:02Z | Executing: sql/03_seed_data.sql ...
+2026-10-31T22:10:02Z | SUCCESS: sql/03_seed_data.sql (84 ms)
+2026-10-31T22:10:02Z | Executing: sql/04_test_suite_and_demo.sql ...
++---------------------+---------------+
+| TableName           | ExactRowCount |
++---------------------+---------------+
+| USER                |             7 |
+| VENUE               |             2 |
+| EVENT               |             2 |
+| TICKET_TIER         |             4 |
+| SESSION             |             3 |
+| REGISTRATION        |             1 |
+| PAYMENT             |             1 |
+| SESSION_ROSTER      |             1 |
+| AUDIT_LOG           |             2 |
+| INDICATOR_VALUE     |            16 |
+| WORKFLOW_TRANSITION |             6 |
+| SCHEMA_VERSION      |             1 |
++---------------------+---------------+
++--------+-------------------+------------------------------------------------------------+--------------------+-----------------------------------------------------------------------------------------------+
+| TestID | RequirementRef    | ScenarioDescription                                        | OutcomeStatus      | CapturedErrorMessage                                                                          |
++--------+-------------------+------------------------------------------------------------+--------------------+-----------------------------------------------------------------------------------------------+
+| AC-02  | FR-01 / BR-01     | Duplicate USER Email insertion                             | PASS (Rejected)    | Duplicate entry 'dave@test.com' for key 'USER.uq_user_email'                                  |
+| TC-02  | FR-05 / BR-02     | Event EndDate earlier than StartDate                       | PASS (Rejected)    | Check constraint 'chk_event_dates' is violated.                                               |
+| TC-03  | FR-06 / BR-02     | Session scheduled outside Event dates                      | PASS (Rejected)    | invalid: BR-02 Violation: Session timestamps must fall within parent Event StartDate and EndD |
+| AC-03  | FR-08 / BR-04     | Ticket tier capacity sum > Venue MaxCapacity               | PASS (Rejected)    | conflict: BR-04 Violation: Combined ticket tier capacities exceed Venue MaxCapacity.          |
+| AC-04  | FR-09 / BR-06     | Duplicate Confirmed registration for same Event            | PASS (Rejected)    | Duplicate entry '4-1' for key 'REGISTRATION.uq_reg_active_attendee_event'                     |
+| AC-06  | FR-10 / BR-05     | Sold-out VIP tier over-registration blocked                | PASS (Rejected)    | conflict: FR-10/BR-05 Violation: Ticket tier has reached maximum capacity.                    |
+| AC-09  | FR-13 / BR-07     | Mid-transaction payment mismatch rolls back REGISTRATION   | PASS (Rolled Back) | invalid: BR-10 Violation: Payment AmountPaid must exactly equal REGISTRATION.AcceptedPrice.   |
+| AC-10  | FR-07 / BR-09     | Overlapping speaker session interval rejected              | PASS (Rejected)    | conflict: BR-09 Violation: Speaker has an overlapping session schedule.                       |
+| AC-11  | FR-14 / BR-08     | Session roster enrollment beyond SessionCapacity           | PASS (Rejected)    | conflict: BR-08 Violation: Session has reached maximum capacity.                              |
+| AC-12  | BR-11 / RESTRICT  | Hard DELETE of parent EVENT with dependent rows blocked    | PASS (Blocked)     | Cannot delete or update a parent row: a foreign key constraint fails                          |
+| AC-14  | SEC-03 / SEC-04   | Non-owner Organizer blocked from checking in session       | PASS (Blocked)     | forbidden: SEC-03/SEC-04 Violation: Only the owning Event Organizer or Admin may update sessi |
+| AC-16A | BR-12 / SEC-08    | UPDATE on AUDIT_LOG blocked by immutability trigger        | PASS (Blocked)     | forbidden: BR-12/SEC-08 Violation: AUDIT_LOG is append-only and immutable. UPDATE is blocked. |
+| AC-16B | BR-12 / SEC-08    | DELETE on AUDIT_LOG blocked by immutability trigger        | PASS (Blocked)     | forbidden: BR-12/SEC-08 Violation: AUDIT_LOG is append-only and immutable. DELETE is blocked. |
++--------+-------------------+------------------------------------------------------------+--------------------+-----------------------------------------------------------------------------------------------+
+2026-10-31T22:10:03Z | SUCCESS: sql/04_test_suite_and_demo.sql (310 ms)
+2026-10-31T22:10:03Z | Executing: sql/07_schema_migration_v2.sql ...
++----------------+----------+-----------+---------------------------+
+| Entity         | PreCount | PostCount | MigrationSurvivalStatus   |
++----------------+----------+-----------+---------------------------+
+| USER           |        7 |         7 | PASS (100% Data Survived) |
+| VENUE          |        2 |         2 | PASS (100% Data Survived) |
+| EVENT          |        2 |         2 | PASS (100% Data Survived) |
+| TICKET_TIER    |        4 |         4 | PASS (100% Data Survived) |
+| SESSION        |        3 |         3 | PASS (100% Data Survived) |
+| REGISTRATION   |        4 |         4 | PASS (100% Data Survived) |
+| PAYMENT        |        4 |         4 | PASS (100% Data Survived) |
+| SESSION_ROSTER |        2 |         2 | PASS (100% Data Survived) |
+| AUDIT_LOG      |        9 |         9 | PASS (100% Data Survived) |
++----------------+----------+-----------+---------------------------+
+2026-10-31T22:10:03Z | SUCCESS: sql/07_schema_migration_v2.sql (68 ms)
+2026-10-31T22:10:03Z | Executing: sql/08_concurrency_and_entitlement_proofs.sql ...
+2026-10-31T22:10:03Z | SUCCESS: sql/08_concurrency_and_entitlement_proofs.sql (54 ms)
+2026-10-31T22:10:03Z | Executing: sql/05_scale_data_generator.sql ...
+2026-10-31T22:10:07Z | SUCCESS: sql/05_scale_data_generator.sql (3420 ms)
+2026-10-31T22:10:07Z | Executing: sql/06_performance_study_report.sql ...
+2026-10-31T22:10:07Z | SUCCESS: sql/06_performance_study_report.sql (290 ms)
+2026-10-31T22:10:07Z | === POST-BUILD OBJECT VERIFICATION SUMMARY ===
++------------+-------------+----------+------------+-----------+-------+
+| BaseTables | Constraints | Triggers | Procedures | Functions | Views |
++------------+-------------+----------+------------+-----------+-------+
+|         13 |          37 |       10 |          7 |         2 |     9 |
++------------+-------------+----------+------------+-----------+-------+
+2026-10-31T22:10:07Z | BUILD SUCCEEDED. tag=v2.0-release; commit=7d3a82f1b409c2a864e29b12cf30a1e0992c6ef1; database=event_registration
