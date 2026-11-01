@@ -611,6 +611,7 @@ BEGIN
         SET MESSAGE_TEXT = 'invalid: BR-08 Violation: Cannot check in a registration whose status is not Confirmed.';
     END IF;
 
+    -- Principle 4: Validate transition via WORKFLOW_TRANSITION metadata table
     SELECT COUNT(*) INTO v_transition_allowed
     FROM `WORKFLOW_TRANSITION`
     WHERE WorkflowName = 'SESSION_CHECKIN'
