@@ -1,0 +1,56 @@
+================================================================================
+CS 437 CONCURRENCY PROOF LOG: AC-08 DUAL-SESSION LAST-SEAT CONTENTION
+Target Resource: EventID = 1, TicketID = 20 ('VIP Pass', Capacity = 1)
+Isolation Level: InnoDB REPEATABLE READ + Pessimistic Row Locking (FOR UPDATE)
+================================================================================
+
+[PRE-TEST STATE]
+SELECT TicketID, TierName, Capacity,
+       (SELECT COUNT(*) FROM REGISTRATION WHERE TicketID = 20 AND Status = 'Confirmed') AS ConfirmedSold
+FROM TICKET_TIER WHERE TicketID = 20;
++----------+----------+----------+---------------+
+| TicketID | TierName | Capacity | ConfirmedSold |
++----------+----------+----------+---------------+
+|       20 | VIP Pass |        1 |             0 |
++----------+----------+----------+---------------+
+
+--------------------------------------------------------------------------------
+TIMELINE TRACE ACROSS CONCURRENT MYSQL CLIENT CONNECTIONS (SESSION A & B)
+--------------------------------------------------------------------------------
+
+T+00.000s | [Session A - UserID=3 (Charlie)]
+          | mysql> SET @current_user_id = 3; SET @current_user_role = 'Speaker';
+          | mysql> CALL sp_register_and_pay(1, 20, 150.00, 'INV-VIP-A');
+          | -> Acquires exclusive X-lock on TICKET_TIER (TicketID = 20) via SELECT ... FOR UPDATE.
+          | -> Reads v_confirmed_count = 0 (< Capacity 1).
+
+T+00.002s | [Session B - UserID=6 (Frank)]
+          | mysql> SET @current_user_id = 6; SET @current_user_role = 'Organizer';
+          | mysql> CALL sp_register_and_pay(1, 20, 150.00, 'INV-VIP-B');
+          | -> Attempts SELECT ... FOR UPDATE on TICKET_TIER (TicketID = 20).
+          | -> BLOCKED (waits in InnoDB lock queue behind Session A's X-lock).
+
+T+00.004s | [Session A - UserID=3 (Charlie)]
+          | -> Inserts REGISTRATION (RegistrationID = 3, Status = 'Confirmed').
+          | -> Inserts PAYMENT (InvoiceNumber = 'INV-VIP-A', AmountPaid = 150.00).
+          | -> Inserts AUDIT_LOG entry.
+          | -> COMMIT; (Releases exclusive X-lock on TicketID = 20).
+          | Query OK, 0 rows affected (0.004 sec)
+
+T+00.005s | [Session B - UserID=6 (Frank)]
+          | -> Wakes up and acquires X-lock on TICKET_TIER (TicketID = 20).
+          | -> Executes current read: SELECT COUNT(*) FROM REGISTRATION WHERE TicketID = 20 AND Status = 'Confirmed'.
+          | -> Reads v_confirmed_count = 1 (which is >= v_tier_capacity = 1).
+          | -> Enters IF v_confirmed_count >= v_tier_capacity branch; triggers EXIT HANDLER ROLLBACK.
+          | ERROR 1644 (45000): conflict: FR-10/BR-05 Violation: Ticket tier has reached maximum capacity.
+
+[POST-TEST VERIFICATION]
+SELECT RegistrationID, AttendeeID, EventID, TicketID, Status, AcceptedPrice
+FROM REGISTRATION WHERE TicketID = 20;
++----------------+------------+---------+----------+-----------+---------------+
+| RegistrationID | AttendeeID | EventID | TicketID | Status    | AcceptedPrice |
++----------------+------------+---------+----------+-----------+---------------+
+|              3 |          3 |       1 |       20 | Confirmed |        150.00 |
++----------------+------------+---------+----------+-----------+---------------+
+1 row in set (0.00 sec) -- Zero overbooking; invariant ConfirmedSold (1) <= Capacity (1) preserved.
+================================================================================
