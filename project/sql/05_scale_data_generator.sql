@@ -1,11 +1,5 @@
 -- =============================================================================
--- sql/05_scale_data_generator.sql (v2.0-release — Fixed for trg_payment_bi_validate)
--- Principle 9: High-Throughput Synthetic Data Generator (50,000+ Rows)
--- Target Workload Volume:
---   - 10,000 Scale Users (Admins, Organizers, Speakers, Attendees)
---   - 100 Scale Venues
---   - 500 Scale Events & 1,500 Ticket Tiers
---   - 50,000 Registrations & 45,000 Confirmed Payments (Zero Trigger Conflicts)
+-- sql/05_scale_data_generator.sql (v2.0-release — Crash-Safe Session Restore)
 -- =============================================================================
 USE `event_registration`;
 
@@ -30,17 +24,22 @@ BEGIN
     DECLARE v_price DECIMAL(10,2);
     DECLARE v_status VARCHAR(30);
 
-    -- Temporarily relax session checks for fast bulk loading
-    SET @old_autocommit = @@autocommit;
+    -- Crash-safe handler: ALWAYS restore session checks even on error
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SET foreign_key_checks = 1;
+        SET unique_checks = 1;
+        SET autocommit = 1;
+        RESIGNAL;
+    END;
+
     SET autocommit = 0;
-    SET @old_fk = @@foreign_key_checks;
     SET foreign_key_checks = 0;
-    SET @old_uq = @@unique_checks;
     SET unique_checks = 0;
-    SET @old_safe = @@sql_safe_updates;
     SET sql_safe_updates = 0;
 
-    -- Clean up any partial scale rows from a previous interrupted run (IDs > 100)
+    -- Clean up any partial scale rows from a previous run
     DELETE FROM `PAYMENT` WHERE `RegistrationID` > 1000;
     DELETE FROM `REGISTRATION` WHERE `RegistrationID` > 1000;
     DELETE FROM `TICKET_TIER` WHERE `TicketID` > 1000;
@@ -49,7 +48,7 @@ BEGIN
     DELETE FROM `USER` WHERE `UserID` > 100;
     COMMIT;
 
-    -- 1. Generate 100 Venues (IDs 101..200 to avoid seed collision)
+    -- 1. Generate 100 Venues (IDs 101..200)
     SET i = 1;
     WHILE i <= 100 DO
         INSERT IGNORE INTO `VENUE` (`VenueID`, `VenueName`, `Address`, `MaxCapacity`)
@@ -117,14 +116,12 @@ BEGIN
     END WHILE;
     COMMIT;
 
-    -- 4. Generate 50,000 Registrations & Payments (Satisfying trg_payment_bi_validate)
+    -- 4. Generate 50,000 Registrations & Confirmed Payments
     SET i = 1;
     WHILE i <= p_registration_count DO
         SET v_event_id = 101 + ((i - 1) % p_event_count);
-        SET v_tier_offset = (i % 3); -- 0, 1, or 2
+        SET v_tier_offset = (i % 3);
         SET v_tier_id = 1000 + ((v_event_id - 101) * 3) + 1 + v_tier_offset;
-
-        -- Distinct (AttendeeID, EventID) pairing across 9,000 attendees and 500 events
         SET v_user_id = 1101 + (((i - 1) * 17 + FLOOR((i - 1) / p_event_count)) % (p_user_count - 1000));
 
         SET v_price = CASE v_tier_offset
@@ -149,7 +146,6 @@ BEGIN
             v_price
         );
 
-        -- Only insert PAYMENT when REGISTRATION is 'Confirmed' (Satisfies BR-07 & BR-10 in trg_payment_bi_validate)
         IF v_status = 'Confirmed' AND ROW_COUNT() = 1 THEN
             INSERT IGNORE INTO `PAYMENT` (
                 `RegistrationID`, `AmountPaid`, `DiscountApplied`, `PaymentDate`, `InvoiceNumber`
@@ -170,10 +166,9 @@ BEGIN
     COMMIT;
 
     -- Restore session settings
-    SET sql_safe_updates = @old_safe;
-    SET foreign_key_checks = @old_fk;
-    SET unique_checks = @old_uq;
-    SET autocommit = @old_autocommit;
+    SET foreign_key_checks = 1;
+    SET unique_checks = 1;
+    SET autocommit = 1;
 
     INSERT INTO `SCHEMA_VERSION` (`ReleaseVersion`, `ScriptFileName`, `ExecutionTimeMs`, `Status`, `Description`)
     VALUES ('v2.0.0', '05_scale_data_generator.sql', 3420, 'SUCCESS', 'Loaded 10k users, 500 events, 50k registrations & 45k confirmed payments')
@@ -182,5 +177,4 @@ END$$
 
 DELIMITER ;
 
--- Execute scale data generation
 CALL `sp_generate_scale_data`(10000, 500, 50000);
