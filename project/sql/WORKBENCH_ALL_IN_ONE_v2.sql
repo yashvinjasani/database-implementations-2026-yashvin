@@ -3,6 +3,11 @@
 -- Core 3NF Relational Schema, Declarative Constraints, Indexes, Views & Roles
 -- Incorporating Principles 1, 3, 4, 8, 11 and Professor Audit Resolutions
 -- ============================================================================
+SET FOREIGN_KEY_CHECKS = 1;
+SET UNIQUE_CHECKS = 1;
+SET AUTOCOMMIT = 1;
+SET SQL_SAFE_UPDATES = 0;
+
 
 DROP DATABASE IF EXISTS `event_registration`;
 CREATE DATABASE `event_registration` 
