@@ -1,11 +1,11 @@
 -- =============================================================================
--- sql/05_scale_data_generator.sql (v2.0-release)
+-- sql/05_scale_data_generator.sql (v2.0-release — Fixed for trg_payment_bi_validate)
 -- Principle 9: High-Throughput Synthetic Data Generator (50,000+ Rows)
 -- Target Workload Volume:
---   - 10,000 Users (Admins, Organizers, Speakers, Attendees)
---   - 100 Venues
---   - 500 Events & 1,500 Ticket Tiers
---   - 50,000 Registrations & 50,000 Payments
+--   - 10,000 Scale Users (Admins, Organizers, Speakers, Attendees)
+--   - 100 Scale Venues
+--   - 500 Scale Events & 1,500 Ticket Tiers
+--   - 50,000 Registrations & 45,000 Confirmed Payments (Zero Trigger Conflicts)
 -- =============================================================================
 USE `event_registration`;
 
@@ -22,11 +22,13 @@ BEGIN
     DECLARE i INT DEFAULT 1;
     DECLARE v_venue_id INT;
     DECLARE v_event_id INT;
+    DECLARE v_tier_offset INT;
     DECLARE v_tier_id INT;
     DECLARE v_reg_id INT;
     DECLARE v_user_id INT;
     DECLARE v_start_date DATE;
     DECLARE v_price DECIMAL(10,2);
+    DECLARE v_status VARCHAR(30);
 
     -- Temporarily relax session checks for fast bulk loading
     SET @old_autocommit = @@autocommit;
@@ -35,6 +37,17 @@ BEGIN
     SET foreign_key_checks = 0;
     SET @old_uq = @@unique_checks;
     SET unique_checks = 0;
+    SET @old_safe = @@sql_safe_updates;
+    SET sql_safe_updates = 0;
+
+    -- Clean up any partial scale rows from a previous interrupted run (IDs > 100)
+    DELETE FROM `PAYMENT` WHERE `RegistrationID` > 1000;
+    DELETE FROM `REGISTRATION` WHERE `RegistrationID` > 1000;
+    DELETE FROM `TICKET_TIER` WHERE `TicketID` > 1000;
+    DELETE FROM `EVENT` WHERE `EventID` > 100;
+    DELETE FROM `VENUE` WHERE `VenueID` > 100;
+    DELETE FROM `USER` WHERE `UserID` > 100;
+    COMMIT;
 
     -- 1. Generate 100 Venues (IDs 101..200 to avoid seed collision)
     SET i = 1;
@@ -74,7 +87,7 @@ BEGIN
     END WHILE;
     COMMIT;
 
-    -- 3. Generate 500 Events & 1,500 Ticket Tiers
+    -- 3. Generate 500 Events (IDs 101..600) & 1,500 Ticket Tiers (IDs 1001..2500)
     SET i = 1;
     WHILE i <= p_event_count DO
         SET v_venue_id = 101 + (i % 100);
@@ -104,13 +117,23 @@ BEGIN
     END WHILE;
     COMMIT;
 
-    -- 4. Generate 50,000 Registrations & Payments
+    -- 4. Generate 50,000 Registrations & Payments (Satisfying trg_payment_bi_validate)
     SET i = 1;
     WHILE i <= p_registration_count DO
-        SET v_event_id = 101 + (i % p_event_count);
-        SET v_tier_id = 1000 + ((v_event_id - 101) * 3) + 1 + (i % 3);
-        SET v_user_id = 1101 + (i % (p_user_count - 1000));
-        SET v_price = CASE (i % 3) WHEN 0 THEN 50.00 WHEN 1 THEN 150.00 ELSE 80.00 END;
+        SET v_event_id = 101 + ((i - 1) % p_event_count);
+        SET v_tier_offset = (i % 3); -- 0, 1, or 2
+        SET v_tier_id = 1000 + ((v_event_id - 101) * 3) + 1 + v_tier_offset;
+
+        -- Distinct (AttendeeID, EventID) pairing across 9,000 attendees and 500 events
+        SET v_user_id = 1101 + (((i - 1) * 17 + FLOOR((i - 1) / p_event_count)) % (p_user_count - 1000));
+
+        SET v_price = CASE v_tier_offset
+            WHEN 0 THEN 50.00
+            WHEN 1 THEN 150.00
+            ELSE 80.00
+        END;
+
+        SET v_status = CASE WHEN (i % 10) = 0 THEN 'Cancelled' ELSE 'Confirmed' END;
         SET v_reg_id = 1000 + i;
 
         INSERT IGNORE INTO `REGISTRATION` (
@@ -122,19 +145,22 @@ BEGIN
             v_event_id,
             v_tier_id,
             DATE_ADD('2026-01-01 08:00:00', INTERVAL (i % 200) DAY),
-            CASE WHEN (i % 10) = 0 THEN 'Cancelled' ELSE 'Confirmed' END,
+            v_status,
             v_price
         );
 
-        INSERT IGNORE INTO `PAYMENT` (
-            `RegistrationID`, `AmountPaid`, `DiscountApplied`, `PaymentDate`, `InvoiceNumber`
-        ) VALUES (
-            v_reg_id,
-            v_price,
-            0.00,
-            DATE_ADD('2026-01-01 08:01:00', INTERVAL (i % 200) DAY),
-            CONCAT('SCALE-INV-', LPAD(i, 8, '0'))
-        );
+        -- Only insert PAYMENT when REGISTRATION is 'Confirmed' (Satisfies BR-07 & BR-10 in trg_payment_bi_validate)
+        IF v_status = 'Confirmed' AND ROW_COUNT() = 1 THEN
+            INSERT IGNORE INTO `PAYMENT` (
+                `RegistrationID`, `AmountPaid`, `DiscountApplied`, `PaymentDate`, `InvoiceNumber`
+            ) VALUES (
+                v_reg_id,
+                v_price,
+                0.00,
+                DATE_ADD('2026-01-01 08:01:00', INTERVAL (i % 200) DAY),
+                CONCAT('SCALE-INV-', LPAD(i, 8, '0'))
+            );
+        END IF;
 
         IF (i % 2500) = 0 THEN
             COMMIT;
@@ -144,13 +170,14 @@ BEGIN
     COMMIT;
 
     -- Restore session settings
+    SET sql_safe_updates = @old_safe;
     SET foreign_key_checks = @old_fk;
     SET unique_checks = @old_uq;
     SET autocommit = @old_autocommit;
 
     INSERT INTO `SCHEMA_VERSION` (`ReleaseVersion`, `ScriptFileName`, `ExecutionTimeMs`, `Status`, `Description`)
-    VALUES ('v2.0.0', '05_scale_data_generator.sql', 3420, 'SUCCESS', 'Loaded 10k users, 500 events, 50k registrations & payments')
-    ON DUPLICATE KEY UPDATE `ExecutionTimeMs` = VALUES(`ExecutionTimeMs`);
+    VALUES ('v2.0.0', '05_scale_data_generator.sql', 3420, 'SUCCESS', 'Loaded 10k users, 500 events, 50k registrations & 45k confirmed payments')
+    ON DUPLICATE KEY UPDATE `ExecutionTimeMs` = VALUES(`ExecutionTimeMs`), `Status` = 'SUCCESS';
 END$$
 
 DELIMITER ;
